@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.enm.projesihirbaziapp.Screens
 
 import android.content.Context
@@ -5,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -12,41 +16,42 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Article
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.Icon
+import com.enm.projesihirbaziapp.Business.DashboardManager   // <-- ÖNEMLİ
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainMenuUI(
-
     onOpenGrants: () -> Unit = {},
     onOpenAcademics: () -> Unit = {},
     onOpenTenders: () -> Unit = {},
     onOpenProfile: () -> Unit = {}
-
-
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dashboardManager = remember { DashboardManager() }
 
-    // Basit state – gerçek veriyi sonra API'den doldururuz
-    var grantCount by remember { mutableStateOf(12) }
-    var academicianCount by remember { mutableStateOf(34) }
-    var tenderCount by remember { mutableStateOf(7) }
-    var showProfileSheet by remember { mutableStateOf(false) }
+    var grantCount by remember { mutableStateOf(0) }
+    var academicianCount by remember { mutableStateOf(0) }
+    var tenderCount by remember { mutableStateOf(0) }
+
     var showAlert by remember { mutableStateOf(false) }
     var alertMessage by remember { mutableStateOf("") }
 
-    // Swift'teki onAppear eşleniği
+    // Ekran açılınca dashboard verisini çek
     LaunchedEffect(Unit) {
+        // Swift'teki onAppear: selectedChatId = 0
         context.getSharedPreferences("proje_sihirbazi_prefs", Context.MODE_PRIVATE)
             .edit().putInt("selectedChatId", 0).apply()
-        // TODO: Burada dashboard API çağrısı yapıp sayıları güncelle.
-        // Hata durumunda:
-        // alertMessage = "Veriler alınamadı."
-        // showAlert = true
+
+        val res = dashboardManager.fetchDashboardData()
+        res.onSuccess { dash ->
+            grantCount = dash.grantCount
+            academicianCount = dash.academicianCount
+            tenderCount = dash.tenderCount
+        }.onFailure { e ->
+            alertMessage = "Veriler alınamadı. Hata: ${e.message ?: "Bilinmeyen hata"}"
+            showAlert = true
+        }
     }
 
     Scaffold(
@@ -75,7 +80,6 @@ fun MainMenuUI(
             )
             Spacer(Modifier.height(16.dp))
 
-            // Küçük istatistik kartları
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatCard(title = "Hibe", value = grantCount, modifier = Modifier.weight(1f))
                 StatCard(title = "Akademisyen", value = academicianCount, modifier = Modifier.weight(1f))
@@ -84,10 +88,12 @@ fun MainMenuUI(
 
             Spacer(Modifier.height(24.dp))
 
-            Text("Hızlı Erişim", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+            Text(
+                "Hızlı Erişim",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+            )
             Spacer(Modifier.height(8.dp))
 
-            // Hızlı erişim kartı
             Card(Modifier.fillMaxWidth()) {
                 Column {
                     ListItem(
@@ -112,22 +118,6 @@ fun MainMenuUI(
         }
     }
 
-    // Profil Sheet
-    if (showProfileSheet) {
-        ModalBottomSheet(onDismissRequest = { showProfileSheet = false }) {
-            Column(Modifier.padding(16.dp).fillMaxWidth()) {
-                Text("Profil", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(12.dp))
-                Text("Profil detayları burada olacak.")
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = { showProfileSheet = false }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Kapat")
-                }
-            }
-        }
-    }
-
-    // Uyarı
     if (showAlert) {
         AlertDialog(
             onDismissRequest = { showAlert = false },
