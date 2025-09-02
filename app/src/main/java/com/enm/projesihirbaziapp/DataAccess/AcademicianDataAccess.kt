@@ -1,26 +1,36 @@
 package com.enm.projesihirbaziapp.DataAccess
 
-import com.enm.projesihirbaziapp.Abstraction.AcademicianService
 import com.enm.projesihirbaziapp.Models.Academician
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.enm.projesihirbaziapp.Abstraction.AcademicianService
+
 import com.google.gson.Gson
-import java.io.IOException
+import com.google.gson.JsonSyntaxException
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.lang.Exception
 import java.net.HttpURLConnection
-import java.net.MalformedURLException
 import java.net.URL
 
 class AcademicianDataAccess : AcademicianService {
 
-    override suspend fun getAcademics(
+    // Swift'teki NetworkError karşılığı (Exception türevleri)
+    sealed class NetworkError(message: String) : Exception(message) {
+        object InvalidURL : NetworkError("Invalid URL")
+        object NoData : NetworkError("No data")
+        class DecodingError(detail: String) : NetworkError("Decoding error: $detail")
+    }
+
+    // Parametresiz init eşleniği zaten default var
+    override fun getAcademics(
         currentPage: Int,
         selectedName: String,
         selectedProvince: String,
         selectedUniversity: String,
-        selectedKeywords: String
-    ): Result<List<Academician>> = withContext(Dispatchers.IO) {
-
-        val urlStr = APIEndpoints.getAcademicsURL(
+        selectedKeywords: String,
+        completion: (Result<Pair<List<Academician>, Int>>) -> Unit
+    ) {
+        // Swift: APIEndpoints.getAcademicsURL(...)
+        val urlString = APIEndpoints.getAcademicsURL(
             currentPage = currentPage,
             selectedName = selectedName,
             selectedProvince = selectedProvince,
@@ -28,53 +38,60 @@ class AcademicianDataAccess : AcademicianService {
             selectedKeywords = selectedKeywords
         )
 
-        var conn: HttpURLConnection? = null
-        try {
-            val url = try {
-                URL(urlStr)
-            } catch (e: MalformedURLException) {
-                return@withContext Result.failure(NetworkError.InvalidURL)
-            }
+        // Arka planda çalıştır (main thread ağ izni yok)
+        Thread {
+            try {
+                val url = try {
+                    URL(urlString)
+                } catch (_: Exception) {
+                    completion(Result.failure(NetworkError.InvalidURL))
+                    return@Thread
+                }
 
-            conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 15000
-                readTimeout = 15000
-                // Eğer endpoint Authorization istiyorsa:
-                // setRequestProperty("Authorization", "Bearer $accessToken")
-            }
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    readTimeout = 15000
+                }
 
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                if (stream == null) {
+                    completion(Result.failure(NetworkError.NoData))
+                    conn.disconnect()
+                    return@Thread
+                }
 
-            if (code in 200..299) {
-                // {"currentPage":..,"pageSize":..,"totalItems":..,"totalPages":..,"items":[...]}
-                val response = Gson().fromJson(text, ResponseAcademican::class.java)
-                Result.success(response.items ?: emptyList())
-            } else {
-                Result.failure(IOException("HTTP $code: $text"))
+                val body = stream.bufferedReader(Charsets.UTF_8).use(BufferedReader::readText)
+                conn.disconnect()
+
+                // Swift: JSONDecoder().decode(ResponseAcademican.self, from: data)
+                try {
+                    val resp = Gson().fromJson(body, ResponseAcademican::class.java)
+                    // Swift: completion(.success((response.items, response.totalPages)))
+                    completion(Result.success(resp.items to resp.totalPages))
+                } catch (e: JsonSyntaxException) {
+                    completion(Result.failure(NetworkError.DecodingError(e.localizedMessage ?: "JsonSyntax")))
+                } catch (e: Exception) {
+                    completion(Result.failure(NetworkError.DecodingError(e.localizedMessage ?: "Unknown JSON error")))
+                }
+            } catch (e: Exception) {
+                // Swift: completion(.failure(error))
+                completion(Result.failure(e))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
-        } finally {
-            conn?.disconnect()
-        }
+        }.start()
     }
 }
 
-/** Swift’teki NetworkError karşılığı */
-sealed class NetworkError(message: String? = null) : Exception(message) {
-    data object InvalidURL : NetworkError("Invalid URL")
-    data object NoData : NetworkError("No data")
-    data class DecodingError(val detail: String) : NetworkError(detail)
-}
-
-/** API'den gelen yanıt modeli */
+/**
+ * Swift’teki Codable struct karşılığı.
+ * Alan adları backend JSON’una göre Swift ile aynı tutuldu:
+ *  currentPage, pageSize, totalItems, totalPages, items
+ */
 data class ResponseAcademican(
     val currentPage: Int,
     val pageSize: Int,
     val totalItems: Int,
     val totalPages: Int,
-    val items: List<Academician>?
+    val items: List<Academician>
 )

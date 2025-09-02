@@ -3,11 +3,13 @@ package com.enm.projesihirbaziapp.Abstraction
 import com.enm.projesihirbaziapp.Models.Academician
 
 interface AcademicianService {
-    suspend fun getAcademics(
+    fun getAcademics(
         currentPage: Int,
         selectedName: String,
         selectedProvince: String,
         selectedUniversity: String,
-        selectedKeywords: String
-    ): Result<List<Academician>>
+        selectedKeywords: String,
+        completion: (Result<Pair<List<Academician>, Int>>) -> Unit
+    )
 }
+
