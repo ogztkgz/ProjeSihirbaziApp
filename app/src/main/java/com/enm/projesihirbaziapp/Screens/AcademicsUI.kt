@@ -16,13 +16,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
 import com.enm.projesihirbaziapp.Business.AcademicianManager
 import com.enm.projesihirbaziapp.Business.FiltreManager
 import com.enm.projesihirbaziapp.Models.Academician
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
 
 @Composable
 fun AcademicsUI() {
@@ -47,27 +46,40 @@ fun AcademicsUI() {
 
     // İlk yükleme
     LaunchedEffect(Unit) {
-        getAcademics(scope, academicianManager, currentPage, selectedName, selectedProvince, selectedUniversity, selectedKeywords,
+        iller = filtreManager.getIl().getOrElse { emptyList() }
+        universiteler = filtreManager.getUni().getOrElse { emptyList() }
+        anahtarKelimeler = filtreManager.getKeyword().getOrElse { emptyList() }
+
+        loadAcademics(
+            manager = academicianManager,
+            page = currentPage,
+            name = selectedName,
+            province = selectedProvince,
+            university = selectedUniversity,
+            keywords = selectedKeywords,
             onLoading = { isLoading = it },
-            onResult = { items ->
-                academicsArr = items
-                totalPages = if (items.isNotEmpty()) maxOf(items.size / 10, 1) else 1
+            onSuccess = { list, pages ->
+                academicsArr = list
+                totalPages = maxOf(pages, 1)
             }
         )
-        getIl(scope, filtreManager) { iller = it }
-        getUni(scope, filtreManager) { universiteler = it }
-        getKeyword(scope, filtreManager) { anahtarKelimeler = it }
     }
 
-    // İsim değiştikçe debounce
+    // Arama debounce
     LaunchedEffect(selectedName) {
         currentPage = 1
         delay(300)
-        getAcademics(scope, academicianManager, currentPage, selectedName, selectedProvince, selectedUniversity, selectedKeywords,
+        loadAcademics(
+            manager = academicianManager,
+            page = currentPage,
+            name = selectedName,
+            province = selectedProvince,
+            university = selectedUniversity,
+            keywords = selectedKeywords,
             onLoading = { isLoading = it },
-            onResult = { items ->
-                academicsArr = items
-                totalPages = if (items.isNotEmpty()) maxOf(items.size / 10, 1) else 1
+            onSuccess = { list, pages ->
+                academicsArr = list
+                totalPages = maxOf(pages, 1)
             }
         )
     }
@@ -83,13 +95,19 @@ fun AcademicsUI() {
                 }
             )
         }
-    ) { inner ->
-        Column(Modifier.padding(inner).fillMaxSize()) {
-
+    ) { innerPadding: PaddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues = innerPadding)
+        ) {
             // Arama
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().heightIn(min = 48.dp)
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
             ) {
                 Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(8.dp))
@@ -105,11 +123,17 @@ fun AcademicsUI() {
                         selectedName = ""
                         currentPage = 1
                         scope.launch {
-                            getAcademics(scope, academicianManager, currentPage, selectedName, selectedProvince, selectedUniversity, selectedKeywords,
+                            loadAcademics(
+                                manager = academicianManager,
+                                page = currentPage,
+                                name = selectedName,
+                                province = selectedProvince,
+                                university = selectedUniversity,
+                                keywords = selectedKeywords,
                                 onLoading = { isLoading = it },
-                                onResult = { items ->
-                                    academicsArr = items
-                                    totalPages = if (items.isNotEmpty()) maxOf(items.size / 10, 1) else 1
+                                onSuccess = { list, pages ->
+                                    academicsArr = list
+                                    totalPages = maxOf(pages, 1)
                                 }
                             )
                         }
@@ -117,7 +141,7 @@ fun AcademicsUI() {
                 }
             }
 
-            // Liste / Yükleniyor
+            // Liste / Loading
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (isLoading) {
                     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -133,9 +157,15 @@ fun AcademicsUI() {
                     ) {
                         items(
                             items = academicsArr,
-                            key = { a -> a.name }      // <-- burada 'it' yok, id gerekmiyor
+                            key = { it.id ?: it.name }
                         ) { academician ->
-                            AcademicianRow(academician = academician) // Dış dosyadaki bileşen
+                            // 1) Eğer AcademicianRow(modifier: Modifier, ...) imzası VARSA:
+                            // AcademicianRow(academician = academician, modifier = Modifier.padding(horizontal = 16.dp))
+
+                            // 2) Eğer modifier parametresi YOKSA (büyük ihtimalle böyle):
+                            Box(Modifier.padding(horizontal = 16.dp)) {
+                                AcademicianRow(academician = academician)
+                            }
                         }
                     }
                 }
@@ -151,11 +181,17 @@ fun AcademicsUI() {
                         if (canPrev) {
                             currentPage -= 1
                             scope.launch {
-                                getAcademics(scope, academicianManager, currentPage, selectedName, selectedProvince, selectedUniversity, selectedKeywords,
+                                loadAcademics(
+                                    manager = academicianManager,
+                                    page = currentPage,
+                                    name = selectedName,
+                                    province = selectedProvince,
+                                    university = selectedUniversity,
+                                    keywords = selectedKeywords,
                                     onLoading = { isLoading = it },
-                                    onResult = { items ->
-                                        academicsArr = items
-                                        totalPages = if (items.isNotEmpty()) maxOf(items.size / 10, 1) else 1
+                                    onSuccess = { list, pages ->
+                                        academicsArr = list
+                                        totalPages = maxOf(pages, 1)
                                     }
                                 )
                             }
@@ -173,11 +209,17 @@ fun AcademicsUI() {
                         if (canNext) {
                             currentPage += 1
                             scope.launch {
-                                getAcademics(scope, academicianManager, currentPage, selectedName, selectedProvince, selectedUniversity, selectedKeywords,
+                                loadAcademics(
+                                    manager = academicianManager,
+                                    page = currentPage,
+                                    name = selectedName,
+                                    province = selectedProvince,
+                                    university = selectedUniversity,
+                                    keywords = selectedKeywords,
                                     onLoading = { isLoading = it },
-                                    onResult = { items ->
-                                        academicsArr = items
-                                        totalPages = if (items.isNotEmpty()) maxOf(items.size / 10, 1) else 1
+                                    onSuccess = { list, pages ->
+                                        academicsArr = list
+                                        totalPages = maxOf(pages, 1)
                                     }
                                 )
                             }
@@ -189,24 +231,29 @@ fun AcademicsUI() {
         }
     }
 
-    // Filtre sheet
+    // Filtre Sheet
     if (showFilterSheet) {
         ModalBottomSheet(
             onDismissRequest = {
                 showFilterSheet = false
                 scope.launch {
                     currentPage = 1
-                    getAcademics(scope, academicianManager, currentPage, selectedName, selectedProvince, selectedUniversity, selectedKeywords,
+                    loadAcademics(
+                        manager = academicianManager,
+                        page = currentPage,
+                        name = selectedName,
+                        province = selectedProvince,
+                        university = selectedUniversity,
+                        keywords = selectedKeywords,
                         onLoading = { isLoading = it },
-                        onResult = { items ->
-                            academicsArr = items
-                            totalPages = if (items.isNotEmpty()) maxOf(items.size / 10, 1) else 1
+                        onSuccess = { list, pages ->
+                            academicsArr = list
+                            totalPages = maxOf(pages, 1)
                         }
                     )
                 }
             }
         ) {
-            // Dış dosyadaki FilterViewAcademician bileşenini KULLAN
             FilterViewAcademician(
                 selectedUniversity = selectedUniversity,
                 onUniversityChange = { selectedUniversity = it },
@@ -221,11 +268,17 @@ fun AcademicsUI() {
                     showFilterSheet = false
                     scope.launch {
                         currentPage = 1
-                        getAcademics(scope, academicianManager, currentPage, selectedName, selectedProvince, selectedUniversity, selectedKeywords,
+                        loadAcademics(
+                            manager = academicianManager,
+                            page = currentPage,
+                            name = selectedName,
+                            province = selectedProvince,
+                            university = selectedUniversity,
+                            keywords = selectedKeywords,
                             onLoading = { isLoading = it },
-                            onResult = { items ->
-                                academicsArr = items
-                                totalPages = if (items.isNotEmpty()) maxOf(items.size / 10, 1) else 1
+                            onSuccess = { list, pages ->
+                                academicsArr = list
+                                totalPages = maxOf(pages, 1)
                             }
                         )
                     }
@@ -235,34 +288,31 @@ fun AcademicsUI() {
     }
 }
 
-/* ---------- Veri çekme yardımcıları ---------- */
+/* ---------------- Yardımcı ---------------- */
 
-private fun getAcademics(
-    scope: CoroutineScope,
+private fun loadAcademics(
     manager: AcademicianManager,
     page: Int,
-    selectedName: String,
-    selectedProvince: String,
-    selectedUniversity: String,
-    selectedKeywords: String,
+    name: String,
+    province: String,
+    university: String,
+    keywords: String,
     onLoading: (Boolean) -> Unit,
-    onResult: (List<Academician>) -> Unit
+    onSuccess: (List<Academician>, Int) -> Unit
 ) {
-    scope.launch {
-        onLoading(true)
-        val res = manager.getAcademics(page, selectedName, selectedProvince, selectedUniversity, selectedKeywords)
+    onLoading(true)
+    manager.getAcademics(
+        currentPage = page,
+        selectedName = name,
+        selectedProvince = province,
+        selectedUniversity = university,
+        selectedKeywords = keywords
+    ) { result ->
         onLoading(false)
-        res.onSuccess { onResult(it) }
-            .onFailure { onResult(emptyList()) }
+        result.onSuccess { (items, totalPages) ->
+            onSuccess(items, totalPages)
+        }.onFailure {
+            onSuccess(emptyList(), 1)
+        }
     }
-}
-
-private fun getIl(scope: CoroutineScope, filtreManager: FiltreManager, onDone: (List<String>) -> Unit) {
-    scope.launch { filtreManager.getIl().onSuccess(onDone).onFailure { onDone(emptyList()) } }
-}
-private fun getUni(scope: CoroutineScope, filtreManager: FiltreManager, onDone: (List<String>) -> Unit) {
-    scope.launch { filtreManager.getUni().onSuccess(onDone).onFailure { onDone(emptyList()) } }
-}
-private fun getKeyword(scope: CoroutineScope, filtreManager: FiltreManager, onDone: (List<String>) -> Unit) {
-    scope.launch { filtreManager.getKeyword().onSuccess(onDone).onFailure { onDone(emptyList()) } }
 }
